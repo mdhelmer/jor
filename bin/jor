@@ -10,6 +10,7 @@ import subprocess
 
 
 def run(args):
+
     with open(args.todo_list, 'r') as f:
         import yaml
         todo_list = yaml.full_load(f)
@@ -31,7 +32,7 @@ def run(args):
 
         parser = _mk_argparser()
         args = parser.parse_args(global_argv + argv)
-        print(f'Submitting job: {argv[1]}')
+        print(f'[jor] Submitting job: {argv[1]}')
         args.subcommand(args)
 
 
@@ -40,7 +41,7 @@ def submit(args):
     jobs = _init_jobs(args)
 
     if jobs.is_output_complete:
-        print('All output files exist, nothing to do.')
+        print('[jor] All output files exist, nothing to do.')
         return
 
     # mk output folder if it doesn't exist yet
@@ -86,22 +87,27 @@ def submit(args):
 
 
 def exec(args):
+
     jobs = _init_jobs(args)
 
     # check if job needs to be run or if output already exists:
     myargs = jobs._jobs[args.i]
     output_path = jobs._get_output_path(**myargs)
-    print(output_path)
+
     if (not args.overwrite_output) and os.path.exists(output_path):
-        print(f'STOPPING: Output file exists and overwriting not '
+        print(f'[jor] STOPPING: Output file exists and overwriting not '
               f'selected: {output_path}')
         return
     
     # otherwise:
     jobs.execute(args.i)
 
+    if not os.path.exists(output_path):
+        print(f'[jor] Execution finished but output file missing: {output_path}')
+
 
 def collect(args):
+
     jobs = _init_jobs(args)
 
     # check and handle missing output files
@@ -117,7 +123,7 @@ def collect(args):
                 raise FileNotFoundError(f"No output file found. Expected "
                                         f"outputs: {outputs}")
             else:
-                print(f'Continuing without the following missing output '
+                print(f'[jor] Continuing without the following missing output '
                       f'files: {missing_outputs}')
         else:
             raise ValueError(f'Invalid argument for "missing-outputs", must '
