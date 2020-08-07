@@ -1,0 +1,230 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import pathlib
+import argparse
+import configparser
+from importlib.util import spec_from_file_location, module_from_spec
+import subprocess
+
+
+def run(args):
+    with open(args.todo_list, 'r') as f:
+        import yaml
+        todo_list = yaml.full_load(f)
+
+    todo_list = todo_list['jobs']
+    for item in todo_list:
+        argv = ['submit', item.pop('jobmodule')]
+        for k, v in item.items():
+            argv += [f'--{k}', v]
+
+        parser = _mk_argparser()
+        args = parser.parse_args(argv)
+        print(f'Submitting job: {argv[1]}')
+        args.subcommand(args)
+
+
+def submit(args):
+
+    jobs = _init_jobs(args)
+
+    if jobs.is_output_complete:
+        print('All output files exist, nothing to do.')
+        return
+
+    # mk output folder if it doesn't exist yet
+    pathlib.Path(jobs._get_output_folder()).mkdir(parents=True, exist_ok=True)
+
+    command = f'{__file__}'
+
+    if (args.path_prefix is not None) and (len(args.path_prefix) > 0):
+        command += f' --path-prefix {args.path_prefix}'
+
+    command += f' exec {args.jobmodule} {{i}} --jobargs "{args.jobargs}"'
+
+    if (args.condaenv is not None) and (len(args.condaenv) > 0):
+        command = f'source `conda info --base`/etc/profile.d/conda.sh; ' \
+                  f'conda activate {args.condaenv}; {command}'
+
+    if (args.sif is not None) and (len(args.sif) > 0):
+        command = f'singularity exec {args.sif} {command}'
+
+    if args.scheduler == 'local':
+        for i in range(len(jobs)):
+            subprocess.run(command.format(i=i), shell=True)
+
+    elif args.scheduler == 'slurm':
+        print(command.format(i='"$SLURM_ARRAY_TASK_ID"'))
+        subprocess.run([
+            'sbatch',
+            '--job-name', jobs.name,
+            '--cpus-per-task', '1',
+            '--mem', jobs.mem,
+            '--time', jobs.time,
+            '--partition', args.partition,
+            '--array', f'0-{len(jobs)-1}',
+            '--wrap', command.format(i='"$SLURM_ARRAY_TASK_ID"')
+        ])
+
+    else:
+        raise ValueError(f'Invalid scheduler: {args.scheduler}')
+
+
+def exec(args):
+    jobs = _init_jobs(args)
+    jobs.execute(args.i)
+
+
+def collect(args):
+    jobs = _init_jobs(args)
+
+    # check and handle missing output files
+    outputs = jobs.output_paths
+    existing_outputs = [output for output in outputs if os.path.exists(output)]
+    if len(existing_outputs) < len(outputs):
+        missing_outputs = set(outputs).difference(set(existing_outputs))
+        if args.missing_output == 'raise':
+            raise FileNotFoundError("Some output files couldn't be found: "
+                                    f"{missing_outputs}")
+        elif args.missing_output == 'ignore':
+            if len(existing_outputs) == 0:
+                raise FileNotFoundError(f"No output file found. Expected "
+                                        f"outputs: {outputs}")
+            else:
+                print(f'Continuing without the following missing output '
+                      f'files: {missing_outputs}')
+        else:
+            raise ValueError(f'Invalid argument for "missing-outputs", must '
+                             f'be "raise" or "ignore", got '
+                             f'{args.missing_output}')
+
+    # collect outputs
+    jobs.collect()
+
+
+def _init_jobs(args):
+
+    if (args.jobargs is not None) and (len(args.jobargs) > 0):
+        jobargs = args.jobargs.strip()
+        if not jobargs.endswith(','):
+            jobargs += ','
+    else:
+        jobargs = ''
+
+    if args.path_prefix is None:
+        path_prefix_arg = ''
+    else:
+        path_prefix_arg = f'path_prefix="{args.path_prefix}"'
+
+    module_spec = spec_from_file_location('jobs_module', args.jobmodule)
+    jobs_module = module_from_spec(module_spec)
+    module_spec.loader.exec_module(jobs_module)
+    jobs = eval(f"jobs_module.Jobs({jobargs}{path_prefix_arg})")
+    return jobs
+
+
+def _mk_argparser():
+
+    # --- 1: check if there'a a config file ---
+    # if config file exists its contents will be used as default values
+    # for argparser
+    cfgargs = configparser.ConfigParser()
+    if os.path.exists('jor.cfg'):
+        cfgargs.read('jor.cfg')
+
+    # --- 2: now setup ArgumentParser ---
+
+    parser = argparse.ArgumentParser(
+        'jor', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '--path-prefix', help='path prefix for output files',
+        default=cfgargs.get('global', 'path-prefix', fallback=None))
+    subparsers = parser.add_subparsers(help='available subcommands')
+
+    # run command
+    subparser_run = subparsers.add_parser(
+        'run', help='run todo list',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    subparser_run.add_argument(
+        '--todo-list', help='file containing todo list',
+        default=cfgargs.get('run', 'todo-list', fallback='todo.yaml'))
+    subparser_run.set_defaults(subcommand=run)
+
+    # submit command
+    subparser_submit = subparsers.add_parser(
+        'submit', help='submit job array',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    subparser_submit.add_argument(
+        'jobmodule',
+        help='Python file (without ".py") containing a class "Jobs"')
+    subparser_submit.add_argument(
+        '--jobargs', help='arguments for "Jobs" class', default="")
+    # subparser_submit.add_argument('--path-prefix')
+    subparser_submit.add_argument(
+        '--scheduler', help='"local" or "slurm"',
+        default=cfgargs.get('submit', 'scheduler', fallback='local'))
+    subparser_submit.add_argument(
+        '--partition', help='slurm partition',
+        default=cfgargs.get('submit', 'partition', fallback='day'))
+    subparser_submit.add_argument(
+        '--sif', help='singularity file image if any',
+        default=cfgargs.get('submit', 'sif', fallback=None))
+    subparser_submit.add_argument(
+        '--condaenv', help='conda environment if any',
+        default=cfgargs.get('submit', 'condaenv', fallback=None))
+    subparser_submit.add_argument(
+        '--overwrite-output', dest='overwrite_output', action='store_true',
+        help='overwrite existing output file')
+    subparser_submit.add_argument(
+        '--no-overwrite-output', dest='overwrite_output', action='store_false',)
+    subparser_submit.set_defaults(overwrite_output=_str2bool(
+        cfgargs.get('submit', 'overwrite-output', fallback=False)))
+    subparser_submit.set_defaults(subcommand=submit)
+
+    # run command
+    subparser_exec = subparsers.add_parser(
+        'exec', help='execute a job',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    subparser_exec.add_argument(
+        'jobmodule',
+        help='Python file (without ".py") containing a class "Jobs"')
+    subparser_exec.add_argument('i', type=int, help='array id')
+    subparser_exec.add_argument('--jobargs', help='arguments for "Jobs" class')
+    # subparser_run.add_argument('--path-prefix')
+    subparser_exec.set_defaults(subcommand=exec)
+
+    # collect command
+    subparser_collect = subparsers.add_parser(
+        'collect', help='collect outputs from job array',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    subparser_collect.add_argument(
+        'jobmodule',
+        help='Python file (without ".py") containing a class "Jobs"')
+    subparser_collect.add_argument('--jobargs', help='arguments for "Jobs" class')
+    subparser_collect.add_argument(
+        '--missing-output',
+        help='either "ignore" a missing output file or "raise" an error',
+        default=cfgargs.get('collect', 'missing-output', fallback='ignore'))
+    subparser_collect.set_defaults(subcommand=collect)
+
+    return parser
+
+
+def _str2bool(s):
+    if isinstance(s, bool):
+        return s
+    elif s.lower() in ['0', 'false', 'no']:
+        return False
+    elif s.lower() in ['1', 'true', 'yes']:
+        return True
+    else:
+        raise ValueError(f"Can't convert {s} to bool")
+
+
+if __name__ == '__main__':
+
+    parser = _mk_argparser()
+    args = parser.parse_args()
+    args.subcommand(args)
