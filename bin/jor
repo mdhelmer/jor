@@ -70,7 +70,6 @@ def submit(args):
             subprocess.run(command.format(i=i), shell=True)
 
     elif args.scheduler == 'slurm':
-        print(command.format(i='"$SLURM_ARRAY_TASK_ID"'))
         subprocess.run([
             'sbatch',
             '--job-name', jobs.name,
