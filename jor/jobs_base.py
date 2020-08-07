@@ -34,7 +34,7 @@ class JobsBase:
             outfname += f'{arg}_'
         for k, v in kwargs.items():
             outfname += f'{k}{v}_'
-        outfname = outfname[::-1]  # drop trailing '_'
+        outfname = outfname[:-1]  # drop trailing '_'
         if outfname == '':
             raise ValueError
 
