@@ -14,6 +14,15 @@ def run(args):
         import yaml
         todo_list = yaml.full_load(f)
 
+    global_argv = []
+
+    if (args.path_prefix is not None) and (len(args.path_prefix) > 0):
+        global_argv += ['--path-prefix',  args.path_prefix]
+    
+    if (args.overwrite_output is not None):
+        maybe_no = '' if args.overwrite_output else 'no-'
+        global_argv += [f'--{maybe_no}overwrite-output']
+
     todo_list = todo_list['jobs']
     for item in todo_list:
         argv = ['submit', item.pop('jobmodule')]
@@ -21,7 +30,7 @@ def run(args):
             argv += [f'--{k}', v]
 
         parser = _mk_argparser()
-        args = parser.parse_args(argv)
+        args = parser.parse_args(global_argv + argv)
         print(f'Submitting job: {argv[1]}')
         args.subcommand(args)
 
@@ -41,6 +50,10 @@ def submit(args):
 
     if (args.path_prefix is not None) and (len(args.path_prefix) > 0):
         command += f' --path-prefix {args.path_prefix}'
+    
+    if (args.overwrite_output is not None):
+        maybe_no = '' if args.overwrite_output else 'no-'
+        command += f' --{maybe_no}overwrite-output'
 
     command += f' exec {args.jobmodule} {{i}} --jobargs "{args.jobargs}"'
 
@@ -74,6 +87,17 @@ def submit(args):
 
 def exec(args):
     jobs = _init_jobs(args)
+
+    # check if job needs to be run or if output already exists:
+    myargs = jobs._jobs[args.i]
+    output_path = jobs._get_output_path(**myargs)
+    print(output_path)
+    if (not args.overwrite_output) and os.path.exists(output_path):
+        print(f'STOPPING: Output file exists and overwriting not '
+              f'selected: {output_path}')
+        return
+    
+    # otherwise:
     jobs.execute(args.i)
 
 
@@ -141,6 +165,14 @@ def _mk_argparser():
     parser.add_argument(
         '--path-prefix', help='path prefix for output files',
         default=cfgargs.get('global', 'path-prefix', fallback=None))
+    parser.add_argument(
+        '--overwrite-output', dest='overwrite_output', action='store_true',
+        help='overwrite existing output file')
+    parser.add_argument(
+        '--no-overwrite-output', dest='overwrite_output', action='store_false',)
+    parser.set_defaults(overwrite_output=_str2bool(
+        cfgargs.get('global', 'overwrite-output', fallback=False)))
+    
     subparsers = parser.add_subparsers(help='available subcommands')
 
     # run command
@@ -161,7 +193,6 @@ def _mk_argparser():
         help='Python file (without ".py") containing a class "Jobs"')
     subparser_submit.add_argument(
         '--jobargs', help='arguments for "Jobs" class', default="")
-    # subparser_submit.add_argument('--path-prefix')
     subparser_submit.add_argument(
         '--scheduler', help='"local" or "slurm"',
         default=cfgargs.get('submit', 'scheduler', fallback='local'))
@@ -174,13 +205,6 @@ def _mk_argparser():
     subparser_submit.add_argument(
         '--condaenv', help='conda environment if any',
         default=cfgargs.get('submit', 'condaenv', fallback=None))
-    subparser_submit.add_argument(
-        '--overwrite-output', dest='overwrite_output', action='store_true',
-        help='overwrite existing output file')
-    subparser_submit.add_argument(
-        '--no-overwrite-output', dest='overwrite_output', action='store_false',)
-    subparser_submit.set_defaults(overwrite_output=_str2bool(
-        cfgargs.get('submit', 'overwrite-output', fallback=False)))
     subparser_submit.set_defaults(subcommand=submit)
 
     # run command
@@ -192,7 +216,6 @@ def _mk_argparser():
         help='Python file (without ".py") containing a class "Jobs"')
     subparser_exec.add_argument('i', type=int, help='array id')
     subparser_exec.add_argument('--jobargs', help='arguments for "Jobs" class')
-    # subparser_run.add_argument('--path-prefix')
     subparser_exec.set_defaults(subcommand=exec)
 
     # collect command
