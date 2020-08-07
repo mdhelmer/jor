@@ -11,8 +11,6 @@ import subprocess
 
 def run(args):
 
-    print('pp', args.path_prefix)
-
     with open(args.todo_list, 'r') as f:
         import yaml
         todo_list = yaml.full_load(f)
