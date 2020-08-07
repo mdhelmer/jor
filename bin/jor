@@ -11,6 +11,8 @@ import subprocess
 
 def run(args):
 
+    print('pp', args.path_prefix)
+
     with open(args.todo_list, 'r') as f:
         import yaml
         todo_list = yaml.full_load(f)
@@ -173,6 +175,7 @@ def _mk_argparser():
         'jor', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         '--path-prefix', help='path prefix for output files',
+        type=_parse_path,
         default=cfgargs.get('global', 'path-prefix', fallback=None))
     parser.add_argument(
         '--overwrite-output', dest='overwrite_output', action='store_true',
@@ -242,6 +245,10 @@ def _mk_argparser():
     subparser_collect.set_defaults(subcommand=collect)
 
     return parser
+
+
+def _parse_path(s):
+    return os.path.expanduser(s)
 
 
 def _str2bool(s):
