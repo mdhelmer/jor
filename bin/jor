@@ -286,5 +286,4 @@ if __name__ == '__main__':
     try:
         args.subcommand(args)
     except AttributeError:
-        print('[jor] Subcommand missing, use "-h" to see possible values.')
-        sys.exit(1)
+        parser.print_help()
