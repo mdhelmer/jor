@@ -1,3 +1,4 @@
 jobs:
 - jobmodule: ./jobs_example.py
+- jobmodule: ./jobs_example.py
 
