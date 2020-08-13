@@ -305,7 +305,7 @@ if __name__ == '__main__':
 
     parser = _mk_argparser()
     args = parser.parse_args()
-    try:
+    if hasattr(args, 'subcommand'):
         args.subcommand(args)
-    except AttributeError:
+    else:
         parser.print_help()
