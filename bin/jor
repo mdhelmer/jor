@@ -75,7 +75,7 @@ def submit(args):
                   f'conda activate {args.condaenv}; {command}'
 
     if (args.sif is not None) and (len(args.sif) > 0):
-        command = f'singularity exec {args.sif} {command}'
+        command = f'singularity exec --cleanenv {args.sif} {command}'
 
     n_jobs = len(jobs)
     # in testing mode only submit first job
