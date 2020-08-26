@@ -58,3 +58,7 @@ class JobsBase:
             return True
         else:
             return False
+
+    def collect(self):
+        pass  # assume that, by default, nothing need to be collected
+    
