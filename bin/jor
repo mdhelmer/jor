@@ -12,11 +12,16 @@ import subprocess
 _TODO_YAML = 'todo.yaml'
 
 
-def run(args):
-
-    with open(args.todo_list, 'r') as f:
+def _parse_todo_list(fname):
+    with open(fname, 'r') as f:
         import yaml
         todo_list = yaml.full_load(f)
+    return todo_list['jobs']
+
+
+def run(args):
+
+    todo_list = _parse_todo_list(args.todo_list)
 
     global_argv = []
 
@@ -31,7 +36,6 @@ def run(args):
         maybe_no = '' if args.test else 'no-'
         global_argv += [f'--{maybe_no}test']
 
-    todo_list = todo_list['jobs']
     for item in todo_list:
         argv = ['submit', item.pop('jobmodule')]
         for k, v in item.items():
@@ -109,15 +113,27 @@ def exec(args):
 
     # check if job needs to be run or if output already exists:
     myargs = jobs._jobs[args.i]
-    output_path = jobs._get_output_path(**myargs)
+    output_path = pathlib.Path(jobs._get_output_path(**myargs))
+    output_exists = output_path.exists()
 
-    if (not args.overwrite_output) and os.path.exists(output_path):
+    if (not args.overwrite_output) and output_exists:
         print(f'[jor] STOPPING: Output file exists and overwriting not '
               f'selected: {output_path}')
         return
     
     # otherwise:
-    jobs.execute(args.i)
+    try:
+        if not output_exists:
+            # note that a particular job is running, but don't update
+            # modification time of an already existing output file
+            output_path.touch()
+        jobs.execute(args.i)
+    except:
+        if not output_exists:  # i.e. "touch" just created an empty file
+            output_path.unlink()
+        # else: in case of error don't delete an already existing output 
+        # that was supposed to be overwritten
+        raise
 
     if not os.path.exists(output_path):
         print(f'[jor] Execution finished but output file missing: {output_path}')
@@ -126,12 +142,7 @@ def exec(args):
 def collect(args):
 
     if args.jobmodule == '[parse todo.yaml]':
-        
-        with open(_TODO_YAML, 'r') as f:
-            import yaml
-            todo_list = yaml.full_load(f)
-
-        todo_list = todo_list['jobs']
+        todo_list = _parse_todo_list(args.todo_list)
 
     else:
         todo_list = [dict(jobmodule=args.jobmodule, jobargs=args.jobargs)]
@@ -142,7 +153,6 @@ def collect(args):
 
         args.jobmodule = item['jobmodule']
         args.jobargs = item['jobargs']
-
         jobs = _init_jobs(args)
 
         # check and handle missing output files
@@ -167,6 +177,40 @@ def collect(args):
 
         # collect outputs
         jobs.collect()
+
+
+def status(args):
+    
+    todo_list = _parse_todo_list(args.todo_list)
+    for item in todo_list:
+
+        args.jobmodule = item['jobmodule']
+        args.jobargs = item['jobargs']
+        jobs = _init_jobs(args)
+
+        outputs = jobs.output_paths
+        missing_outputs, empty_outputs, complete_outputs = [], [], []
+        for output in outputs:
+            path = pathlib.Path(output)
+            if not path.exists():
+                missing_outputs.append(path.name)
+            else:
+                if path.stat().st_size == 0:
+                    empty_outputs.append(path.name)
+                else:
+                    # assume non-empty files are complete
+                    complete_outputs.append(path.name)
+
+        # to not clutter output, don't print status of completely completed jobs
+        if (len(missing_outputs) > 0) or (len(empty_outputs) > 0):
+            print(f'[jor] {args.jobmodule} :: {args.jobargs}')
+            print(f'      -> {jobs._get_output_folder()}')
+            print(f'      {len(missing_outputs): >6} / {len(outputs)} missing')
+            print(f'      {len(empty_outputs): >6} / {len(outputs)} running or dead')
+            print(f'      {len(complete_outputs): >6} / {len(outputs)} completed')
+            if len(missing_outputs) > 0:
+                print(f'      Missing outputs: {missing_outputs}')
+            print('')
 
 
 def _init_jobs(args):
@@ -213,6 +257,9 @@ def _mk_argparser():
         type=_parse_path,
         default=cfgargs.get('global', 'path-prefix', fallback=None))
     parser.add_argument(
+        '--todo-list', help='file containing todo list',
+        default=cfgargs.get('run', 'todo-list', fallback='todo.yaml'))
+    parser.add_argument(
         '--overwrite-output', dest='overwrite_output', action='store_true',
         help='overwrite existing output file')
     parser.add_argument(
@@ -230,9 +277,6 @@ def _mk_argparser():
     subparser_run = subparsers.add_parser(
         'run', help='run todo list',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    subparser_run.add_argument(
-        '--todo-list', help='file containing todo list',
-        default=cfgargs.get('run', 'todo-list', fallback='todo.yaml'))
     subparser_run.set_defaults(subcommand=run)
 
     # submit command
@@ -282,6 +326,12 @@ def _mk_argparser():
         help='either "ignore" a missing output file or "raise" an error',
         default=cfgargs.get('collect', 'missing-output', fallback='ignore'))
     subparser_collect.set_defaults(subcommand=collect)
+
+    # status command
+    subparser_status = subparsers.add_parser(
+        'status', help='show status of jobs',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    subparser_status.set_defaults(subcommand=status)
 
     return parser
 
