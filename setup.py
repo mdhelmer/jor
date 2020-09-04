@@ -1,14 +1,14 @@
 from setuptools import setup, find_packages
 
 def readme():
-    with open('README.md') as f:
+    with open('README.rst') as f:
         return f.read()
 
 setup(name='jor',
-      version='0.1',
+      version='0.1.2',
       author='Markus Helmer',
       url='https://github.com/mdhelmer/jor',
-      description='Lighweight JOb Runner for HPC environments',
+      description='Lighweight JOb Runner for reproducible research results in HPC environments',
       long_description=readme(),
       classifiers=[
         'Development Status :: 4 - Beta',
