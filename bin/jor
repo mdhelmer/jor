@@ -95,7 +95,7 @@ def submit(args):
         subprocess.run([
             'sbatch',
             '--job-name', jobs.name,
-            '--cpus-per-task', '1',
+            '--cpus-per-task', str(jobs.cpus_per_task),
             '--mem', jobs.mem,
             '--time', jobs.time,
             '--partition', args.partition,

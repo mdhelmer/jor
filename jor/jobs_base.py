@@ -3,11 +3,15 @@ import os
 
 class JobsBase:
 
+    # slurm options
     name = 'job'
     time = '0-23:59:59'
     mem = '5G'
+    cpus_per_task = 1
 
     def __init__(self, path_prefix=None):
+        if path_prefix is None:
+            self.path_prefix = '.'
         self.path_prefix = path_prefix
 
     def __len__(self):
@@ -60,5 +64,5 @@ class JobsBase:
             return False
 
     def collect(self):
-        pass  # assume that, by default, nothing need to be collected
+        pass  # assume that, by default, nothing needs to be collected
     
