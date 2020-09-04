@@ -1,4 +1,5 @@
 jobs:
 - jobmodule: ./jobs_example.py
+  jobargs: n=3
 - jobmodule: ./jobs_example.py
-
+  jobargs: n=4
