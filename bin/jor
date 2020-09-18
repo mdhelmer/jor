@@ -63,7 +63,7 @@ def submit(args):
     # mk output folder if it doesn't exist yet
     pathlib.Path(jobs._get_output_folder()).mkdir(parents=True, exist_ok=True)
 
-    command = f'{__file__}'
+    command = 'jor'
 
     if (args.path_prefix is not None) and (len(args.path_prefix) > 0):
         command += f' --path-prefix {args.path_prefix}'
