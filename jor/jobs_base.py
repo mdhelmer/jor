@@ -57,6 +57,14 @@ class JobsBase:
                 if not os.path.exists(output)]
 
     @property
+    def existing_outputs(self):
+        return [
+            output
+            for output in self.output_paths
+            if os.path.exists(output) and os.stat(output).st_size > 0
+        ]
+
+    @property
     def is_output_complete(self):
         if len(self.missing_outputs) == 0:
             return True
