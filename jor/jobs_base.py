@@ -53,7 +53,8 @@ class JobsBase:
 
     @property
     def missing_outputs(self):
-        return [output for output in self.output_paths
+        return [output 
+                for output in self.output_paths
                 if not os.path.exists(output)]
 
     @property
@@ -61,7 +62,15 @@ class JobsBase:
         return [
             output
             for output in self.output_paths
-            if os.path.exists(output) and os.stat(output).st_size > 0
+            if os.path.exists(output) and (os.stat(output).st_size > 0)
+        ]
+
+    @property
+    def running_outputs(self):
+        return [
+            output
+            for output in self.output_paths
+            if os.path.exists(output) and (os.stat(output).st_size == 0)
         ]
 
     @property
