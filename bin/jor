@@ -99,13 +99,39 @@ def submit(args):
             '--mem', jobs.mem,
             '--time', jobs.time,
             '--partition', args.partition,
-            '--array', f'0-{n_jobs - 1}',
+            '--array', _array_jobs(jobs),
             '--wrap', command.format(i='"$SLURM_ARRAY_TASK_ID"')
         ])
 
     else:
         raise ValueError(f'Invalid scheduler: {args.scheduler}')
 
+
+def _array_jobs(jobs):
+    outputs = jobs.output_paths
+    missing_outputs_ids = [i for i, output in enumerate(outputs) if not os.path.exists(output)]
+
+    i = 0
+    condensed_missing_output_ids = []
+    while i < len(missing_outputs_ids):
+        j = i + 1
+        #print(i, j, missing_outputs_ids[i], missing_outputs_ids[j])
+        while (j <= len(missing_outputs_ids) - 1) and (missing_outputs_ids[j] - missing_outputs_ids[i] == (j - i)):
+            j += 1
+        j -= 1
+
+        if j > i + 1:
+            condensed_missing_output_ids.append(f'{missing_outputs_ids[i]}-{missing_outputs_ids[j]}')
+        else:
+            condensed_missing_output_ids += [str(missing_outputs_ids[x]) for x in range(i, j + 1)]
+        
+        i = j + 1
+
+    condensed_missing_output_ids
+
+    return ','.join(condensed_missing_output_ids)
+    #n_jobs = len(jobs)
+    #return f'0-{n_jobs - 1}'
 
 def exec(args):
 
@@ -201,16 +227,18 @@ def status(args):
                     # assume non-empty files are complete
                     complete_outputs.append(path.name)
 
+        print(f'[jor] {args.jobmodule} :: {args.jobargs}')
+        print(f'      -> {jobs._get_output_folder()}')
         # to not clutter output, don't print status of completely completed jobs
         if (len(missing_outputs) > 0) or (len(empty_outputs) > 0):
-            print(f'[jor] {args.jobmodule} :: {args.jobargs}')
-            print(f'      -> {jobs._get_output_folder()}')
             print(f'      {len(missing_outputs): >6} / {len(outputs)} missing')
             print(f'      {len(empty_outputs): >6} / {len(outputs)} running or dead')
             print(f'      {len(complete_outputs): >6} / {len(outputs)} completed')
             if len(missing_outputs) > 0:
                 print(f'      Missing outputs: {missing_outputs}')
-            print('')
+        else:
+            print('COMPLETE')
+        print('')
 
 
 def _init_jobs(args):
